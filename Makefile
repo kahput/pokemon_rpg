@@ -3,7 +3,7 @@ CC := gcc
 CFLAGS := -Wall -std=c99 -Wfatal-errors
 
 # Executable
-EXEC := pokelike
+EXEC := poke_like
 
 # Directories
 SRC_DIR := src
@@ -11,7 +11,7 @@ BIN_DIR := bin
 
 # Include and linking flags
 INCLUDES := -I ./src/
-LIBRARIES := 
+LIBRARIES := -lraylib -lxml2 -ltmx -lz -lzstd
 
 # Source files and object files
 SOURCES := $(shell find $(SRC_DIR) -name '*.c')
