@@ -5,6 +5,8 @@
 typedef enum {
 	COMPONENT_SPRITE,
 	COMPONENT_TILEMAP,
+	COMPONENT_TRANSFORM,
+	COMPONENT_INPUT_CONTROLLED,
 
 	COMPONENT_COUNT,
 } ComponentID;
@@ -12,7 +14,6 @@ typedef enum {
 typedef struct {
 	Texture2D* texture;
 	Rectangle rect;
-	Vector2 position;
 } Sprite;
 
 typedef struct {
@@ -21,3 +22,12 @@ typedef struct {
 	u32 width, height, tile_width, tile_height;
 	u32 tile_count, tile_offset;
 } Tilemap;
+
+typedef struct {
+	Vector2 position, scale;
+	f32 rotation;
+} Transform2D;
+
+typedef struct {
+	Vector2 direction;
+} PlayerInput;

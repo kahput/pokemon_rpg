@@ -21,13 +21,18 @@ void raylib_free_tex(void* ptr) {
 
 Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name);
 Entity create_player_at_marker(tmx_map* map, const char* position);
+
+void input_system(ComponentView* view, f32 dt);
+void move_system(ComponentView* view, f32 dt);
+
 void draw_tilemap(ComponentView* view, f32 dt);
 void draw_sprites(ComponentView* view, f32 dt);
 
 int main(void) {
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Monster-gather");
-	ecs_startup(2, sizeof(Sprite), sizeof(Tilemap));
+	ecs_startup(3, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(PlayerInput));
 
+	ecs_attach_system(input_system, 1, COMPONENT_INPUT_CONTROLLED);
 	ecs_attach_system(draw_tilemap, 1, COMPONENT_TILEMAP);
 	ecs_attach_system(draw_sprites, 1, COMPONENT_SPRITE);
 
@@ -38,6 +43,7 @@ int main(void) {
 	tmx_map* map = tmx_load("assets/data/maps/world.tmx");
 	Entity tilemap = create_tilemap_from_tmx(map, "Terrain");
 	Entity player = create_player_at_marker(map, "house");
+	ecs_attach_component(player, 2, &(PlayerInput){ true });
 
 	while (!WindowShouldClose()) {
 		ClearBackground(BLACK);
@@ -52,6 +58,24 @@ int main(void) {
 	ecs_shutdown();
 	tmx_map_free(map);
 	CloseWindow();
+}
+
+void input_system(ComponentView* view, f32 dt) {
+	PlayerInput* player_input = (PlayerInput*)ecs_view_fetch(view, COMPONENT_INPUT_CONTROLLED);
+
+	for (u32 entity = 0; entity < view->count; entity++) {
+		PlayerInput* input = &player_input[entity];
+
+		input->direction.x = IsKeyDown(KEY_D) - IsKeyDown(KEY_A);
+		input->direction.y = IsKeyDown(KEY_S) - IsKeyDown(KEY_W);
+	}
+}
+
+void move_system(ComponentView* view, f32 dt) {
+	Transform2D* transforms = (Transform2D*)ecs_view_fetch(view, COMPONENT_TRANSFORM);
+
+	for (u32 entity = 0; entity < view->count; entity++) {
+	}
 }
 
 Entity create_player_at_marker(tmx_map* map, const char* position) {
@@ -79,10 +103,6 @@ Entity create_player_at_marker(tmx_map* map, const char* position) {
 		player,
 		COMPONENT_SPRITE,
 		&(Sprite){
-			.position = {
-				.x = player_position_marker->x,
-				.y = player_position_marker->y,
-			},
 			.rect = {
 				.x = player_position_marker->x - TILE_SIZE * .5f,
 				.y = player_position_marker->y - TILE_SIZE * .5f,
@@ -95,30 +115,45 @@ Entity create_player_at_marker(tmx_map* map, const char* position) {
 }
 
 Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
+	u32 offset = 1;
 	tmx_layer* layer = map->ly_head;
 	while (layer) {
-		if (strcmp(layer->name, layer_name) == 0)
-			break;
+		printf("Shouldn't this finish?\n");
+		switch (layer->type) {
+			case L_LAYER: {
+				if (!(strcmp(layer->name, "Terrain") == 0))
+					break;
+
+				Entity tilemap_entity = ecs_create_entity();
+				Tilemap tilemap = {
+					.width = map->width,
+					.height = map->height,
+					.tile_width = map->tile_width,
+					.tile_height = map->tile_height,
+					.texture = *(Texture2D*)map->tiles[1]->tileset->image->resource_image,
+					.tile_offset = offset,
+					.tile_count = offset + map->tiles[1]->tileset->tilecount,
+
+				};
+				offset += tilemap.tile_count;
+				tilemap.tiles = malloc(sizeof(u32) * tilemap.width * tilemap.height);
+
+				for (int y = 0; y < tilemap.width; y++) {
+					for (int x = 0; x < tilemap.height; x++) {
+						int gid = (layer->content.gids[x + (y * map->width)]) & TMX_FLIP_BITS_REMOVAL;
+						tilemap.tiles[x + y * tilemap.width] = gid;
+					}
+				}
+
+				ecs_attach_component(tilemap_entity, COMPONENT_TILEMAP, &tilemap);
+			} break;
+			case L_OBJGR: {
+			} break;
+			default: {
+			} break;
+		}
 		layer = layer->next;
 	}
-
-	Entity tilemap_entity = ecs_create_entity();
-	Tilemap tilemap = { 0 };
-	tilemap.width = map->width, tilemap.height = map->height;
-	tilemap.tile_width = map->tile_width, tilemap.tile_height = map->tile_height;
-	tilemap.texture = *(Texture2D*)map->tiles[1]->tileset->image->resource_image;
-	tilemap.tile_offset = 1, tilemap.tile_count = map->tiles[1]->tileset->tilecount;
-	tilemap.tiles = malloc(sizeof(u32) * tilemap.width * tilemap.height);
-
-	for (int y = 0; y < tilemap.width; y++) {
-		for (int x = 0; x < tilemap.height; x++) {
-			int gid = (layer->content.gids[x + (y * map->width)]) & TMX_FLIP_BITS_REMOVAL;
-			tilemap.tiles[x + y * tilemap.width] = gid;
-		}
-	}
-
-	ecs_attach_component(tilemap_entity, COMPONENT_TILEMAP, &tilemap);
-	return tilemap_entity;
 }
 
 void draw_tilemap(ComponentView* view, f32 dt) {
