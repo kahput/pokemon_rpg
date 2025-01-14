@@ -1,3 +1,5 @@
+#include "components.h"
+#include "ecs.h"
 #include "settings.h"
 
 #include <raylib.h>
@@ -17,105 +19,134 @@ void raylib_free_tex(void* ptr) {
 	free(ptr);
 }
 
-typedef struct {
-	Texture2D* texture;
-	Rectangle rect;
-	Vector2 position;
-} Sprite;
-
-typedef struct {
-	Sprite* sprites;
-	u32 count;
-} SpriteGroup;
-
-SpriteGroup setup(tmx_map* map, const char* player_pos);
-void draw_sprites(SpriteGroup* sprites);
+Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name);
+Entity create_player_at_marker(tmx_map* map, const char* position);
+void draw_tilemap(ComponentView* view, f32 dt);
+void draw_sprites(ComponentView* view, f32 dt);
 
 int main(void) {
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Monster-gather");
+	ecs_startup(2, sizeof(Sprite), sizeof(Tilemap));
+
+	ecs_attach_system(draw_tilemap, 1, COMPONENT_TILEMAP);
+	ecs_attach_system(draw_sprites, 1, COMPONENT_SPRITE);
 
 	/* Set the callback globs in the main function */
 	tmx_img_load_func = raylib_tex_loader;
 	tmx_img_free_func = raylib_free_tex;
 
 	tmx_map* map = tmx_load("assets/data/maps/world.tmx");
-	SpriteGroup all_sprites = setup(map, "house");
+	Entity tilemap = create_tilemap_from_tmx(map, "Terrain");
+	Entity player = create_player_at_marker(map, "house");
 
 	while (!WindowShouldClose()) {
 		ClearBackground(BLACK);
 		BeginDrawing();
 
-		draw_sprites(&all_sprites);
+		ecs_update(GetFrameTime());
 		DrawFPS(10, 10);
 
 		EndDrawing();
 	}
 
+	ecs_shutdown();
 	tmx_map_free(map);
 	CloseWindow();
 }
 
-SpriteGroup setup(tmx_map* map, const char* player_pos) {
+Entity create_player_at_marker(tmx_map* map, const char* position) {
 	tmx_layer* layer = map->ly_head;
-	tmx_layer* terrain;
-	tmx_object* player_position_markers;
+	tmx_object* player_position_marker = NULL;
 	while (layer) {
 		if (strcmp(layer->name, "Entities") == 0) {
-			player_position_markers = layer->content.objgr->head;
-			while (player_position_markers) {
-				tmx_properties* properties = player_position_markers->properties;
-				tmx_property* value = tmx_get_property(properties, "pos");
-				if (value && strcmp(value->value.string, player_pos) == 0)
-					break;
+			player_position_marker = layer->content.objgr->head;
+			while (player_position_marker) {
+				tmx_properties* properties = player_position_marker->properties;
+				if (properties) {
+					tmx_property* value = tmx_get_property(properties, "pos");
+					if (value && strcmp(value->value.string, position) == 0)
+						break;
+				}
 
-				player_position_markers = player_position_markers->next;
+				player_position_marker = player_position_marker->next;
 			}
 		}
-		if (strcmp(layer->name, "Terrain") == 0)
-			terrain = layer;
 		layer = layer->next;
 	}
 
-	printf("Got marker at (%.2f, %.2f)\n", player_position_markers->x, player_position_markers->y);
+	Entity player = ecs_create_entity();
+	ecs_attach_component(
+		player,
+		COMPONENT_SPRITE,
+		&(Sprite){
+			.position = {
+				.x = player_position_marker->x,
+				.y = player_position_marker->y,
+			},
+			.rect = {
+				.x = player_position_marker->x - TILE_SIZE * .5f,
+				.y = player_position_marker->y - TILE_SIZE * .5f,
+				.width = TILE_SIZE,
+				.height = TILE_SIZE,
+			},
+			.texture = NULL,
+		});
+	return player;
+}
 
-	Sprite* sprites = malloc(sizeof(Sprite) * map->width * map->height);
-	u32 count = 0;
-	for (int y = 0; y < map->height; y++) {
-		for (int x = 0; x < map->width; x++) {
-			u32 gid = (terrain->content.gids[x + (y * map->width)]) & TMX_FLIP_BITS_REMOVAL;
-			if (!map->tiles[gid])
-				continue;
-			tmx_tileset* tileset = map->tiles[gid]->tileset;
-			tmx_image* im = map->tiles[gid]->image;
-			void* image;
-			if (im) {
-				image = im->resource_image;
-			} else {
-				image = tileset->image->resource_image;
-			}
-			Rectangle rec = {
-				.x = map->tiles[gid]->ul_x,
-				.y = map->tiles[gid]->ul_y,
-				.width = tileset->tile_width,
-				.height = tileset->tile_height,
-			};
-			sprites[count++] = (Sprite){
-				.position = { .x = x * TILE_SIZE, .y = y * TILE_SIZE },
-				.rect = rec,
-				.texture = (Texture2D*)image
-			};
+Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
+	tmx_layer* layer = map->ly_head;
+	while (layer) {
+		if (strcmp(layer->name, layer_name) == 0)
+			break;
+		layer = layer->next;
+	}
+
+	Entity tilemap_entity = ecs_create_entity();
+	Tilemap tilemap = { 0 };
+	tilemap.width = map->width, tilemap.height = map->height;
+	tilemap.tile_width = map->tile_width, tilemap.tile_height = map->tile_height;
+	tilemap.texture = *(Texture2D*)map->tiles[1]->tileset->image->resource_image;
+	tilemap.tile_offset = 1, tilemap.tile_count = map->tiles[1]->tileset->tilecount;
+	tilemap.tiles = malloc(sizeof(u32) * tilemap.width * tilemap.height);
+
+	for (int y = 0; y < tilemap.width; y++) {
+		for (int x = 0; x < tilemap.height; x++) {
+			int gid = (layer->content.gids[x + (y * map->width)]) & TMX_FLIP_BITS_REMOVAL;
+			tilemap.tiles[x + y * tilemap.width] = gid;
 		}
 	}
 
-	printf("Sprite[0]: (%.2f, %.2f)\n", sprites[0].position.x, sprites[0].position.y);
-
-	return (SpriteGroup){
-		.sprites = sprites,
-		.count = count
-	};
+	ecs_attach_component(tilemap_entity, COMPONENT_TILEMAP, &tilemap);
+	return tilemap_entity;
 }
 
-void draw_sprites(SpriteGroup* sprites) {
-	for (int i = 0; i < sprites->count; i++)
-		DrawTextureRec(*(sprites->sprites[i].texture), sprites->sprites[i].rect, sprites->sprites[i].position, WHITE);
+void draw_tilemap(ComponentView* view, f32 dt) {
+	Tilemap* tilemap = (Tilemap*)ecs_view_fetch(view, COMPONENT_TILEMAP);
+	for (int entity = 0; entity < view->count; entity++) {
+		for (u32 y = 0; y < tilemap[entity].height; y++) {
+			for (u32 x = 0; x < tilemap[entity].height; x++) {
+				u32 index = x + y * tilemap[entity].width;
+				u32 gid = tilemap->tiles[index];
+				Rectangle rect = {
+					.x = (int)((gid - tilemap[entity].tile_offset) % 10) * tilemap->tile_width,
+					.y = (int)((gid - tilemap[entity].tile_offset) / 10) * tilemap->tile_height,
+					.width = tilemap->tile_width,
+					.height = tilemap->tile_height
+				};
+
+				DrawTextureRec(tilemap[entity].texture, rect, (Vector2){ .x = x * TILE_SIZE, .y = y * TILE_SIZE }, WHITE);
+			}
+		}
+	}
+}
+
+void draw_sprites(ComponentView* view, f32 dt) {
+	Sprite* sprites = (Sprite*)ecs_view_fetch(view, COMPONENT_SPRITE);
+
+	for (int entity = 0; entity < view->count; entity++) {
+		Sprite sprite = sprites[entity];
+
+		DrawRectangleRec(sprite.rect, RED);
+	}
 }
