@@ -22,17 +22,17 @@ void raylib_free_tex(void* ptr) {
 Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name);
 Entity create_player_at_marker(tmx_map* map, const char* position);
 
-void input_system(ComponentView* view, f32 dt);
-void move_system(ComponentView* view, f32 dt);
+void input_system(View* view, f32 dt);
+void move_system(View* view, f32 dt);
 
-void draw_tilemap(ComponentView* view, f32 dt);
-void draw_sprites(ComponentView* view, f32 dt);
+void draw_tilemap(View* view, f32 dt);
+void draw_sprites(View* view, f32 dt);
 
 int main(void) {
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Monster-gather");
-	ecs_startup(3, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(PlayerInput));
+	ecs_startup(COMPONENT_COUNT, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(PlayerInput));
 
-	ecs_attach_system(input_system, 1, COMPONENT_INPUT_CONTROLLED);
+	ecs_attach_system(input_system, 1, COMPONENT_PLAYER_INPUT);
 	ecs_attach_system(draw_tilemap, 1, COMPONENT_TILEMAP);
 	ecs_attach_system(draw_sprites, 1, COMPONENT_SPRITE);
 
@@ -43,7 +43,7 @@ int main(void) {
 	tmx_map* map = tmx_load("assets/data/maps/world.tmx");
 	Entity tilemap = create_tilemap_from_tmx(map, "Terrain");
 	Entity player = create_player_at_marker(map, "house");
-	ecs_attach_component(player, 2, &(PlayerInput){ true });
+	ecs_attach_component(player, COMPONENT_PLAYER_INPUT, &(PlayerInput){ { 0.f, 0.f } });
 
 	while (!WindowShouldClose()) {
 		ClearBackground(BLACK);
@@ -60,19 +60,18 @@ int main(void) {
 	CloseWindow();
 }
 
-void input_system(ComponentView* view, f32 dt) {
-	PlayerInput* player_input = (PlayerInput*)ecs_view_fetch(view, COMPONENT_INPUT_CONTROLLED);
-
+void input_system(View* view, f32 dt) {
 	for (u32 entity = 0; entity < view->count; entity++) {
-		PlayerInput* input = &player_input[entity];
+		Entity e = view->entities[entity];
+		PlayerInput* input = (PlayerInput*)ecs_fetch_component(e, COMPONENT_PLAYER_INPUT);
 
 		input->direction.x = IsKeyDown(KEY_D) - IsKeyDown(KEY_A);
 		input->direction.y = IsKeyDown(KEY_S) - IsKeyDown(KEY_W);
 	}
 }
 
-void move_system(ComponentView* view, f32 dt) {
-	Transform2D* transforms = (Transform2D*)ecs_view_fetch(view, COMPONENT_TRANSFORM);
+void move_system(View* view, f32 dt) {
+	Transform2D* transforms = (Transform2D*)ecs_fetch_component_array(COMPONENT_TRANSFORM);
 
 	for (u32 entity = 0; entity < view->count; entity++) {
 	}
@@ -156,9 +155,11 @@ Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
 	}
 }
 
-void draw_tilemap(ComponentView* view, f32 dt) {
-	Tilemap* tilemap = (Tilemap*)ecs_view_fetch(view, COMPONENT_TILEMAP);
+void draw_tilemap(View* view, f32 dt) {
 	for (int entity = 0; entity < view->count; entity++) {
+		Entity e = view->entities[entity];
+		Tilemap* tilemap = (Tilemap*)ecs_fetch_component(e, COMPONENT_TILEMAP);
+
 		for (u32 y = 0; y < tilemap[entity].height; y++) {
 			for (u32 x = 0; x < tilemap[entity].height; x++) {
 				u32 index = x + y * tilemap[entity].width;
@@ -170,17 +171,16 @@ void draw_tilemap(ComponentView* view, f32 dt) {
 					.height = tilemap->tile_height
 				};
 
-				DrawTextureRec(tilemap[entity].texture, rect, (Vector2){ .x = x * TILE_SIZE, .y = y * TILE_SIZE }, WHITE);
+				DrawTextureRec(tilemap->texture, rect, (Vector2){ .x = x * TILE_SIZE, .y = y * TILE_SIZE }, WHITE);
 			}
 		}
 	}
 }
 
-void draw_sprites(ComponentView* view, f32 dt) {
-	Sprite* sprites = (Sprite*)ecs_view_fetch(view, COMPONENT_SPRITE);
-
+void draw_sprites(View* view, f32 dt) {
 	for (int entity = 0; entity < view->count; entity++) {
-		Sprite sprite = sprites[entity];
+		Entity e = view->entities[entity];
+		Sprite sprite = *(Sprite*)ecs_fetch_component(e, COMPONENT_SPRITE);
 
 		DrawRectangleRec(sprite.rect, RED);
 	}

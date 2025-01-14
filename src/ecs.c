@@ -27,10 +27,9 @@ typedef struct {
 typedef struct {
 	ComponentArray components[MAX_COMPONENTS];
 	System systems[MAX_SYSTEMS];
-	ComponentView view;
 	u32 component_count, system_count;
 	u32 *entity_signatures, *entity_to_index, *index_to_entity, *entity_free_ids;
-	u32 entity_count, entity_capcity, entity_free_ids_count, systems_entity_capacity;
+	u32 entity_count, entity_capcity, entity_free_ids_count;
 } ECS;
 
 static ECS g_world = { 0 };
@@ -58,20 +57,6 @@ void system_add_entity(Entity entity) {
 					exit(EXIT_FAILURE);
 				}
 				system->entities = tmp;
-
-				if (g_world.systems_entity_capacity < system->entity_capcity) {
-					for (int comp = 0; comp < g_world.component_count; comp++) {
-						g_world.systems_entity_capacity = system->entity_capcity;
-						void* tmp = realloc(g_world.view.data[comp], g_world.systems_entity_capacity * g_world.components[comp].element_size);
-						if (!tmp) {
-							printf("Realloc failed for view\n");
-							exit(EXIT_FAILURE);
-						}
-						g_world.view.data[comp] = tmp;
-					}
-
-					printf("INFO: SYSTEM: System view capcity = %d\n", g_world.systems_entity_capacity);
-				}
 			}
 
 			system->entities[system->entity_count++] = entity;
@@ -125,10 +110,8 @@ void ecs_shutdown() {
 	printf("INFO: ECS shutdown successfullly\n");
 
 	// Free component data
-	for (int i = 0; i < g_world.component_count; i++) {
+	for (int i = 0; i < g_world.component_count; i++)
 		free(g_world.components[i].data);
-		free(g_world.view.data[i]);
-	}
 
 	// Free systems
 	for (int i = 0; i < g_world.system_count; i++)
@@ -223,10 +206,10 @@ void ecs_destroy_entity(Entity entity) {
 		g_world.index_to_entity[deleted_entity_index] = moved_entity;
 		g_world.entity_signatures[deleted_entity_index] = g_world.entity_signatures[last_index];
 		printf("INFO: ENTITY: [ID %d | IDX %d | GEN %d] Entity moved to index %d\n",
-				moved_entity_id,
-				last_index,
-				moved_entity_generation,
-				g_world.entity_to_index[moved_entity_id]
+			moved_entity_id,
+			last_index,
+			moved_entity_generation,
+			g_world.entity_to_index[moved_entity_id]
 
 		);
 	}
@@ -357,45 +340,16 @@ void ecs_attach_system(SystemPointer system_ptr, u32 component_count, ...) {
 	printf("INFO: SYSTEM: [IDX %d | SIG %d] System added\n", (g_world.system_count - 1), system->signature);
 }
 
-void* ecs_view_fetch(ComponentView* view, u32 component_id) {
-	return view->data[component_id];
+void* ecs_fetch_component_array(u32 component_id) {
+	return g_world.components[component_id].data;
 }
 
 void ecs_update(f64 dt) {
 	for (int sys = 0; sys < g_world.system_count; sys++) {
 		System* system = &g_world.systems[sys];
 
-		ComponentView* view = &g_world.view;
-		view->count = system->entity_count;
-
-		for (int index = 0; index < system->entity_count; index++) {
-			u32 entity_component_index = g_world.entity_to_index[get_entity_id(system->entities[index])];
-			for (int comp = 0; comp < g_world.component_count; comp++) {
-				u32 component_id = system->signature >> comp & 1;
-				if (!component_id)
-					continue;
-				ComponentArray* component = &g_world.components[comp];
-				void* dst = (u8*)view->data[comp] + index * component->element_size;
-				void* src = (u8*)component->data + entity_component_index * component->element_size;
-				memcpy(dst, src, component->element_size);
-			}
-		}
-
-		system->ptr(view, dt);
-
-		for (int index = 0; index < system->entity_count; index++) {
-			u32 entity_component_index = g_world.entity_to_index[get_entity_id(system->entities[index])];
-			for (int comp = 0; comp < g_world.component_count; comp++) {
-				u32 component_id = system->signature >> comp & 1;
-				if (!component_id)
-					continue;
-				ComponentArray* component = &g_world.components[comp];
-				void* src = (u8*)view->data[comp] + index * component->element_size;
-				void* dst = (u8*)component->data + entity_component_index * component->element_size;
-				memcpy(dst, src, component->element_size);
-			}
-		}
-
-		view->count = 0;
+		if (system->entity_count)
+			system->ptr(
+				&(View){ .entities = system->entities, .count = system->entity_count }, dt);
 	}
 }
