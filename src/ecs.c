@@ -297,12 +297,12 @@ void* ecs_fetch_component(Entity entity, u32 component_id) {
 	u32 index = g_world.entity_to_index[entity_id];
 	assert(index < g_world.entity_count);
 	assert(component_id < g_world.component_count);
-	assert((g_world.entity_signatures[index] & (1 << component_id)) == (1 << component_id) && "Entity does not have component");
+	if (!((g_world.entity_signatures[index] & (1 << component_id)) == (1 << component_id)))
+		return NULL;
 	ComponentArray* array = &g_world.components[component_id];
 	size_t element_size = g_world.components[component_id].element_size;
 
 	return ((u8*)array->data + index * element_size);
-	return NULL;
 }
 
 bool ecs_has_component(Entity entity, u32 component_id) {

@@ -3,6 +3,7 @@
 #include "settings.h"
 
 #include <raylib.h>
+#include <raymath.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,11 +31,12 @@ void draw_sprites(View* view, f32 dt);
 
 int main(void) {
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Monster-gather");
-	ecs_startup(COMPONENT_COUNT, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(PlayerInput));
+	ecs_startup(COMPONENT_COUNT, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(Player));
 
-	ecs_attach_system(input_system, 1, COMPONENT_PLAYER_INPUT);
+	ecs_attach_system(input_system, 1, COMPONENT_PLAYER);
+	ecs_attach_system(move_system, 1, COMPONENT_TRANSFORM);
 	ecs_attach_system(draw_tilemap, 1, COMPONENT_TILEMAP);
-	ecs_attach_system(draw_sprites, 1, COMPONENT_SPRITE);
+	ecs_attach_system(draw_sprites, 2, COMPONENT_SPRITE, COMPONENT_TRANSFORM);
 
 	/* Set the callback globs in the main function */
 	tmx_img_load_func = raylib_tex_loader;
@@ -43,7 +45,6 @@ int main(void) {
 	tmx_map* map = tmx_load("assets/data/maps/world.tmx");
 	Entity tilemap = create_tilemap_from_tmx(map, "Terrain");
 	Entity player = create_player_at_marker(map, "house");
-	ecs_attach_component(player, COMPONENT_PLAYER_INPUT, &(PlayerInput){ { 0.f, 0.f } });
 
 	while (!WindowShouldClose()) {
 		ClearBackground(BLACK);
@@ -63,10 +64,11 @@ int main(void) {
 void input_system(View* view, f32 dt) {
 	for (u32 entity = 0; entity < view->count; entity++) {
 		Entity e = view->entities[entity];
-		PlayerInput* input = (PlayerInput*)ecs_fetch_component(e, COMPONENT_PLAYER_INPUT);
+		Player* player = (Player*)ecs_fetch_component(e, COMPONENT_PLAYER);
 
-		input->direction.x = IsKeyDown(KEY_D) - IsKeyDown(KEY_A);
-		input->direction.y = IsKeyDown(KEY_S) - IsKeyDown(KEY_W);
+		player->direction.x = IsKeyDown(KEY_D) - IsKeyDown(KEY_A);
+		player->direction.y = IsKeyDown(KEY_S) - IsKeyDown(KEY_W);
+		player->direction = Vector2Normalize(player->direction);
 	}
 }
 
@@ -74,6 +76,14 @@ void move_system(View* view, f32 dt) {
 	Transform2D* transforms = (Transform2D*)ecs_fetch_component_array(COMPONENT_TRANSFORM);
 
 	for (u32 entity = 0; entity < view->count; entity++) {
+		Entity e = view->entities[entity];
+		Transform2D* transform = (Transform2D*)ecs_fetch_component(e, COMPONENT_TRANSFORM);
+		Player* player = (Player*)ecs_fetch_component(e, COMPONENT_PLAYER);
+
+		if (player) {
+			transform->position.x += player->direction.x * player->speed * dt;
+			transform->position.y += player->direction.y * player->speed * dt;
+		}
 	}
 }
 
@@ -103,13 +113,21 @@ Entity create_player_at_marker(tmx_map* map, const char* position) {
 		COMPONENT_SPRITE,
 		&(Sprite){
 			.rect = {
-				.x = player_position_marker->x - TILE_SIZE * .5f,
-				.y = player_position_marker->y - TILE_SIZE * .5f,
+				.x = 0.f,
+				.y = 0.f,
 				.width = TILE_SIZE,
 				.height = TILE_SIZE,
 			},
 			.texture = NULL,
 		});
+
+	ecs_attach_component(player, COMPONENT_TRANSFORM,
+		&(Transform2D){
+			.position = { player_position_marker->x, player_position_marker->y },
+			.scale = { 1.f, 1.f },
+			.rotation = 0.f });
+
+	ecs_attach_component(player, COMPONENT_PLAYER, &(Player){ .direction = { 0.f, 0.f }, .speed = 250.f });
 	return player;
 }
 
@@ -181,7 +199,8 @@ void draw_sprites(View* view, f32 dt) {
 	for (int entity = 0; entity < view->count; entity++) {
 		Entity e = view->entities[entity];
 		Sprite sprite = *(Sprite*)ecs_fetch_component(e, COMPONENT_SPRITE);
+		Transform2D* transform = (Transform2D*)ecs_fetch_component(e, COMPONENT_TRANSFORM);
 
-		DrawRectangleRec(sprite.rect, RED);
+			DrawRectangleV(transform->position, (Vector2){ sprite.rect.width, sprite.rect.height }, RED);
 	}
 }

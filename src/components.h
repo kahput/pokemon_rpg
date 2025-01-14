@@ -6,7 +6,7 @@ typedef enum {
 	COMPONENT_SPRITE,
 	COMPONENT_TILEMAP,
 	COMPONENT_TRANSFORM,
-	COMPONENT_PLAYER_INPUT,
+	COMPONENT_PLAYER,
 
 	COMPONENT_COUNT,
 } ComponentID;
@@ -30,4 +30,5 @@ typedef struct {
 
 typedef struct {
 	Vector2 direction;
-} PlayerInput;
+	u32 speed;
+} Player;
