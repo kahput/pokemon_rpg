@@ -91,6 +91,9 @@ void ecs_startup(u32 component_count, ...) {
 	va_start(args, component_count);
 	for (int i = 0; i < component_count; i++) {
 		g_world.components[i].element_size = va_arg(args, size_t);
+		g_world.components[i].capacity = 0; // Initialize capacity
+		g_world.components[i].data = NULL; // Initialize data to NULL
+		g_world.components[i].count = 0; // Initialize count to 0
 		printf("INFO: COMPONENT: [ID %d | %zuB] Component defined.\n", i, g_world.components[i].element_size);
 	}
 	va_end(args);
@@ -163,8 +166,6 @@ Entity ecs_create_entity() {
 	}
 
 	u8 entity_generation = get_entity_generation(g_world.index_to_entity[index]);
-	if (entity_generation == 0)
-		entity_generation = 1;
 
 	g_world.entity_signatures[index] = 0;
 	g_world.index_to_entity[index] = entity_id | (entity_generation << ENTITY_INDEX_BITS);
@@ -251,9 +252,15 @@ void ecs_attach_component(Entity entity, u32 component_id, void* data) {
 	ComponentArray* array = &g_world.components[component_id];
 	size_t element_size = g_world.components[component_id].element_size;
 
-	if (array->count >= array->capacity) {
+	if (array->count == array->capacity) {
 		array->capacity = array->capacity ? array->capacity * 2 : 32;
-		array->data = realloc(array->data, array->capacity * element_size);
+		printf("Going to resize from %d to %d. Next size: %zu\n", array->count, array->capacity, array->capacity * array->element_size);
+		void* tmp = realloc(array->data, array->element_size * array->capacity);
+		if (!tmp) {
+			printf("Realloc failed for component array %d\n", component_id);
+			exit(EXIT_FAILURE); // Or handle error
+		}
+		array->data = tmp;
 
 		printf("INFO: COMPONENT: [IDX %d] Component array resized to %d\n", component_id, array->capacity);
 	}

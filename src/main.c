@@ -31,7 +31,7 @@ void draw_sprites(View* view, f32 dt);
 
 int main(void) {
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Monster-gather");
-	ecs_startup(COMPONENT_COUNT, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(Player));
+	ecs_startup(COMPONENT_COUNT, sizeof(Sprite), sizeof(Tilemap), sizeof(Transform2D), sizeof(Player), sizeof(Camera2D));
 
 	ecs_attach_system(input_system, 1, COMPONENT_PLAYER);
 	ecs_attach_system(move_system, 1, COMPONENT_TRANSFORM);
@@ -49,10 +49,12 @@ int main(void) {
 	while (!WindowShouldClose()) {
 		ClearBackground(BLACK);
 		BeginDrawing();
+		BeginMode2D(*((Camera2D*)ecs_fetch_component(player, COMPONENT_CAMERA)));
 
 		ecs_update(GetFrameTime());
-		DrawFPS(10, 10);
+		EndMode2D();
 
+		DrawFPS(10, 10);
 		EndDrawing();
 	}
 
@@ -81,8 +83,15 @@ void move_system(View* view, f32 dt) {
 		Player* player = (Player*)ecs_fetch_component(e, COMPONENT_PLAYER);
 
 		if (player) {
+			Camera2D* camera = (Camera2D*)ecs_fetch_component(e, COMPONENT_CAMERA);
+			Sprite* sprite = (Sprite*)ecs_fetch_component(e, COMPONENT_SPRITE);
 			transform->position.x += player->direction.x * player->speed * dt;
 			transform->position.y += player->direction.y * player->speed * dt;
+
+			camera->target = (Vector2){
+				.x = transform->position.x + sprite->rect.width * .5f,
+				.y = transform->position.y + sprite->rect.height * .5f,
+			};
 		}
 	}
 }
@@ -127,6 +136,12 @@ Entity create_player_at_marker(tmx_map* map, const char* position) {
 			.scale = { 1.f, 1.f },
 			.rotation = 0.f });
 
+	ecs_attach_component(player, COMPONENT_CAMERA,
+		&(Camera2D){
+			.target = { .x = player_position_marker->x + (TILE_SIZE * .5f), .y = player_position_marker->y + (TILE_SIZE * .5f) },
+			.offset = { .x = WINDOW_WIDTH * .5f, WINDOW_HEIGHT * .5f },
+			.rotation = 0.f,
+			.zoom = 1.f });
 	ecs_attach_component(player, COMPONENT_PLAYER, &(Player){ .direction = { 0.f, 0.f }, .speed = 250.f });
 	return player;
 }
@@ -134,8 +149,8 @@ Entity create_player_at_marker(tmx_map* map, const char* position) {
 Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
 	u32 offset = 1;
 	tmx_layer* layer = map->ly_head;
+	tmx_object* object = NULL;
 	while (layer) {
-		printf("Shouldn't this finish?\n");
 		switch (layer->type) {
 			case L_LAYER: {
 				if (!(strcmp(layer->name, "Terrain") == 0))
@@ -165,6 +180,33 @@ Entity create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
 				ecs_attach_component(tilemap_entity, COMPONENT_TILEMAP, &tilemap);
 			} break;
 			case L_OBJGR: {
+				if (!(strcmp(layer->name, "Objects") == 0))
+					break;
+				object = layer->content.objgr->head;
+				printf("OBJ ============== ID: %d, GID: %d, offset: %d\n", object->id, object->content.gid, offset);
+
+				Texture* texture = (Texture*)map->tiles[object->content.gid]->image;
+
+				while (object) {
+					Entity object_entity = ecs_create_entity();
+
+					tmx_tile* tile = map->tiles[object->content.gid];
+					Sprite sprite = {
+						.rect = {
+							.x = tile->ul_x * tile->width,
+							.y = tile->ul_y * tile->height,
+							.width = tile->width,
+							.height = tile->height },
+						.texture = texture
+					};
+					Transform2D transform = {
+						.position.x = object->x,
+						.position.y = object->y,
+						.scale = { .x = 1.f, .y = 1.f },
+						.rotation = object->rotation
+					};
+					object = object->next;
+				}
 			} break;
 			default: {
 			} break;
@@ -182,14 +224,16 @@ void draw_tilemap(View* view, f32 dt) {
 			for (u32 x = 0; x < tilemap[entity].height; x++) {
 				u32 index = x + y * tilemap[entity].width;
 				u32 gid = tilemap->tiles[index];
-				Rectangle rect = {
-					.x = (int)((gid - tilemap[entity].tile_offset) % 10) * tilemap->tile_width,
-					.y = (int)((gid - tilemap[entity].tile_offset) / 10) * tilemap->tile_height,
-					.width = tilemap->tile_width,
-					.height = tilemap->tile_height
-				};
+				if (gid) {
+					Rectangle rect = {
+						.x = (int)((gid - tilemap[entity].tile_offset) % 10) * tilemap->tile_width,
+						.y = (int)((gid - tilemap[entity].tile_offset) / 10) * tilemap->tile_height,
+						.width = tilemap->tile_width,
+						.height = tilemap->tile_height
+					};
 
-				DrawTextureRec(tilemap->texture, rect, (Vector2){ .x = x * TILE_SIZE, .y = y * TILE_SIZE }, WHITE);
+					DrawTextureRec(tilemap->texture, rect, (Vector2){ .x = x * TILE_SIZE, .y = y * TILE_SIZE }, WHITE);
+				}
 			}
 		}
 	}
@@ -201,6 +245,9 @@ void draw_sprites(View* view, f32 dt) {
 		Sprite sprite = *(Sprite*)ecs_fetch_component(e, COMPONENT_SPRITE);
 		Transform2D* transform = (Transform2D*)ecs_fetch_component(e, COMPONENT_TRANSFORM);
 
+		if (sprite.texture)
+			DrawTextureRec(*sprite.texture, sprite.rect, transform->position, WHITE);
+		else
 			DrawRectangleV(transform->position, (Vector2){ sprite.rect.width, sprite.rect.height }, RED);
 	}
 }
