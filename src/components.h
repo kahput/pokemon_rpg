@@ -1,35 +1,33 @@
 #pragma once
-#include "settings.h"
 #include <raylib.h>
+#include <stdint.h>
 
-typedef enum {
-	COMPONENT_SPRITE,
-	COMPONENT_TILEMAP,
-	COMPONENT_TRANSFORM,
-	COMPONENT_PLAYER,
-	COMPONENT_CAMERA,
-
-	COMPONENT_COUNT,
-} ComponentID;
+typedef struct {
+	Vector2 position, scale;
+	float rotation;
+} Transform2D;
 
 typedef struct {
 	Texture2D* texture;
 	Rectangle rect;
+	Transform2D transform;
 } Sprite;
 
 typedef struct {
+	Sprite* sprites;
+	uint32_t count, capacity;
+} SpriteGroup;
+
+typedef struct {
 	Texture2D texture;
-	u32* tiles;
-	u32 width, height, tile_width, tile_height;
-	u32 tile_count, tile_offset;
+	uint32_t* tiles;
+	uint32_t width, height, tile_width, tile_height;
+	uint32_t tile_count, tile_offset;
 } Tilemap;
 
 typedef struct {
-	Vector2 position, scale;
-	f32 rotation;
-} Transform2D;
-
-typedef struct {
+	Camera2D camera;
 	Vector2 direction;
-	u32 speed;
+	uint32_t speed;
+	uint32_t sprite_id;
 } Player;
