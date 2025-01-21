@@ -22,7 +22,7 @@ typedef struct {
 	Texture2D texture;
 	uint32_t* tiles;
 	uint32_t width, height, tile_width, tile_height;
-	uint32_t tile_count, tile_offset;
+	uint32_t tile_offset;
 } Tilemap;
 
 typedef struct {

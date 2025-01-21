@@ -21,10 +21,10 @@ void raylib_free_tex(void* ptr) {
 	free(ptr);
 }
 
-static Tilemap* g_tilemap = NULL;
+static Tilemap* g_tilemap[2] = { NULL, NULL };
 static SpriteGroup g_all_sprites = { 0 };
 
-void create_tilemap_from_tmx(tmx_map* map, const char* layer_name);
+void setup_layer(tmx_map* map, const char* layer_name);
 Player create_player_at_marker(tmx_map* map, const char* position);
 
 void handle_input(Player* player, float dt);
@@ -40,9 +40,11 @@ int main(void) {
 	tmx_img_load_func = raylib_tex_loader;
 	tmx_img_free_func = raylib_free_tex;
 
-	tmx_map* map = tmx_load("assets/data/maps/hospital.tmx");
-	create_tilemap_from_tmx(map, "Terrain");
-	Player player = create_player_at_marker(map, "world");
+	tmx_map* map = tmx_load("assets/data/maps/world.tmx");
+	setup_layer(map, "Terrain");
+	setup_layer(map, "Terrain Top");
+	setup_layer(map, "Objects");
+	Player player = create_player_at_marker(map, "house");
 
 	SpriteGroup* all_sprites = get_group(SPRITE_GROUP_ALL);
 
@@ -56,7 +58,8 @@ int main(void) {
 
 		BeginMode2D(player.camera);
 
-		draw_tilemap(g_tilemap);
+		draw_tilemap(g_tilemap[0]);
+		draw_tilemap(g_tilemap[1]);
 		draw_sprites(all_sprites->sprites, all_sprites->count);
 
 		EndMode2D();
@@ -142,60 +145,59 @@ Player create_player_at_marker(tmx_map* map, const char* position) {
 	};
 }
 
-void create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
+void setup_layer(tmx_map* map, const char* layer_name) {
 	uint32_t offset = 1;
 	tmx_layer* layer = map->ly_head;
 	tmx_object* object = NULL;
 	while (layer) {
 		switch (layer->type) {
 			case L_LAYER: {
-				if (!layer->visible || strcmp(layer->name, "Terrain") != 0)
+				if (strcmp(layer->name, layer_name) != 0)
 					break;
 
-				tmx_tileset_list* ts_list = map->ts_head;
-				tmx_tileset* ts = map->tiles[layer->content.gids[0]]->tileset;
+				uint32_t* tiles = malloc(sizeof(uint32_t) * map->width * map->height);
+				tmx_tileset* ts = NULL;
 
-				while (ts_list) {
-					if (strcmp(ts_list->tileset->name, ts->name) == 0)
-						break;
-					if (ts_list->next == NULL) {
-						printf("ERROR: Layer tilset not a part of this map | %s:%d\n", __FILE__, __LINE__);
-						exit(1);
+				for (int y = 0; y < map->height; y++) {
+					for (int x = 0; x < map->width; x++) {
+						int gid = (layer->content.gids[x + (y * map->width)]) & TMX_FLIP_BITS_REMOVAL;
+						tiles[x + y * map->width] = gid;
+						if (ts == NULL && gid)
+							ts = map->tiles[gid]->tileset;
 					}
-					ts_list = ts_list->next;
 				}
 
 				Tilemap* tilemap = malloc(sizeof(Tilemap));
 				*tilemap = (Tilemap){
 					.width = map->width,
 					.height = map->height,
-					.tile_width = ts->tile_width,
-					.tile_height = ts->tile_height,
-					.texture = *(Texture2D*)ts->image->resource_image,
-					.tile_offset = ts_list->firstgid,
-					.tile_count = ts->tilecount,
-
+					.tile_width = map->tile_width,
+					.tile_height = map->tile_height,
+					.tile_offset = 0,
+					.tiles = tiles
 				};
 
-				printf("TILEMAP_DATA: (%d, %d, %d, %d), offset = %d\n", tilemap->width, tilemap->height, tilemap->tile_width, tilemap->tile_height, tilemap->tile_offset);
-				printf("TEUXTRE: %d(%.2d, %.2d)\n", tilemap->texture.id, tilemap->texture.width, tilemap->texture.height);
-				tilemap->tiles = malloc(sizeof(uint32_t) * tilemap->width * tilemap->height);
-
-				for (int y = 0; y < tilemap->height; y++) {
-					for (int x = 0; x < tilemap->width; x++) {
-						int gid = (layer->content.gids[x + (y * map->width)]) & TMX_FLIP_BITS_REMOVAL;
-						tilemap->tiles[x + y * tilemap->width] = gid;
+				if (ts) {
+					tmx_tileset_list* ts_list = map->ts_head;
+					while (ts_list) {
+						if (strcmp(ts_list->tileset->name, ts->name) == 0)
+							break;
+						if (ts_list->next == NULL) {
+							printf("ERROR: Layer tilset not a part of this map | %s:%d\n", __FILE__, __LINE__);
+							exit(1);
+						}
+						ts_list = ts_list->next;
 					}
+					tilemap->texture = *(Texture2D*)ts->image->resource_image;
+					tilemap->tile_offset = ts_list->firstgid;
 				}
 
-				g_tilemap = tilemap;
-
+				g_tilemap[g_tilemap[0] ? 1 : 0] = tilemap;
 			} break;
 			case L_OBJGR: {
-				if (!layer->visible || strcmp(layer->name, "Objects") != 0)
+				if (strcmp(layer->name, layer_name) != 0)
 					break;
 				object = layer->content.objgr->head;
-				printf("OBJ ============== ID: %d, GID: %d, offset: %d\n", object->id, object->content.gid, offset);
 
 				while (object) {
 					tmx_tile* tile = map->tiles[object->content.gid];
@@ -216,9 +218,6 @@ void create_tilemap_from_tmx(tmx_map* map, const char* layer_name) {
 						.texture = texture
 					};
 
-					printf("TEUXTRE: %d(%.2d, %.2d)\n", texture->id, texture->width, texture->height);
-					printf("ID: %d, SPRITE_DATA: (%.2f, %.2f, %.2f, %.2f)\n", tile->id, sprite.rect.x, sprite.rect.y,
-						sprite.rect.width, sprite.rect.height);
 					add_to_group(&sprite, SPRITE_GROUP_ALL);
 					object = object->next;
 				}
