@@ -14,8 +14,17 @@ typedef struct {
 } Sprite;
 
 typedef struct {
+	Rectangle rect;
+	Transform2D transform;
+	uint32_t count,  frame_index;
+	Texture2D** textures;
+} AnimatedSprite;
+
+typedef struct {
 	Sprite* sprites;
 	uint32_t count, capacity;
+	AnimatedSprite* animated_sprites;
+	uint32_t animated_count, animated_capacity;
 } SpriteGroup;
 
 typedef struct {

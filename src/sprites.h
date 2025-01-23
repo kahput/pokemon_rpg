@@ -11,5 +11,6 @@ typedef enum {
 	SPRITE_GROUP_COUNT
 } Group;
 
-SpriteID add_to_group(Sprite* sprite, Group id);
-SpriteGroup* get_group(Group id);
+SpriteID sprite_push(Sprite* sprite, Group id);
+SpriteID sprite_push_animated(AnimatedSprite* sprite, Group id);
+SpriteGroup* sprite_fetch_group(Group id);

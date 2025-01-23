@@ -24,6 +24,7 @@ void raylib_free_tex(void* ptr) {
 static Tilemap* g_tilemap[2] = { NULL, NULL };
 static SpriteGroup g_all_sprites = { 0 };
 
+void load_graphics(const char* path);
 void setup_layer(tmx_map* map, const char* layer_name);
 Player create_player_at_marker(tmx_map* map, const char* position);
 
@@ -31,11 +32,13 @@ void handle_input(Player* player, float dt);
 void update_positions(SpriteGroup* sprites, Player* player, float dt);
 
 void draw_tilemap(const Tilemap* tilemap);
-void draw_sprites(const Sprite* sprites, uint32_t count);
+void draw_sprites(const SpriteGroup* sprites, uint32_t count);
 
 int main(void) {
 	InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Monster-gather");
+	SetTargetFPS(60);
 
+	load_graphics("assets/graphics/tilesets/water");
 	/* Set the callback globs in the main function */
 	tmx_img_load_func = raylib_tex_loader;
 	tmx_img_free_func = raylib_free_tex;
@@ -43,10 +46,11 @@ int main(void) {
 	tmx_map* map = tmx_load("assets/data/maps/world.tmx");
 	setup_layer(map, "Terrain");
 	setup_layer(map, "Terrain Top");
+	setup_layer(map, "Water");
 	setup_layer(map, "Objects");
 	Player player = create_player_at_marker(map, "house");
 
-	SpriteGroup* all_sprites = get_group(SPRITE_GROUP_ALL);
+	SpriteGroup* all_sprites = sprite_fetch_group(SPRITE_GROUP_ALL);
 
 	while (!WindowShouldClose()) {
 		ClearBackground(BLACK);
@@ -60,7 +64,7 @@ int main(void) {
 
 		draw_tilemap(g_tilemap[0]);
 		draw_tilemap(g_tilemap[1]);
-		draw_sprites(all_sprites->sprites, all_sprites->count);
+		draw_sprites(all_sprites, all_sprites->count);
 
 		EndMode2D();
 		DrawFPS(10, 10);
@@ -69,6 +73,24 @@ int main(void) {
 
 	tmx_map_free(map);
 	CloseWindow();
+}
+
+void load_graphics(const char* path) {
+	if (!FileExists(path) && !DirectoryExists(path))
+		TraceLog(LOG_FATAL, "No such file or directory exists");
+
+	if (IsPathFile(path)) {
+		// File
+		printf("You gave me a file!\n");
+	} else {
+		// Direcotry
+		FilePathList files = LoadDirectoryFilesEx(path, ".png", true);
+
+		TraceLog(LOG_INFO, "Files in %s: ", path);
+		for (int i = 0; i < files.count; i++) {
+			TraceLog(LOG_INFO, "%s", files.paths[i]);
+		}
+	}
 }
 
 void handle_input(Player* player, float dt) {
@@ -141,7 +163,7 @@ Player create_player_at_marker(tmx_map* map, const char* position) {
 		.camera = camera,
 		.direction = { 0, 0 },
 		.speed = 250,
-		.sprite_id = add_to_group(&sprite, SPRITE_GROUP_ALL)
+		.sprite_id = sprite_push(&sprite, SPRITE_GROUP_ALL)
 	};
 }
 
@@ -199,27 +221,63 @@ void setup_layer(tmx_map* map, const char* layer_name) {
 					break;
 				object = layer->content.objgr->head;
 
-				while (object) {
-					tmx_tile* tile = map->tiles[object->content.gid];
-					Transform2D transform = {
-						.position.x = object->x,
-						.position.y = object->y - tile->height,
-						.scale = { .x = 1.f, .y = 1.f },
-						.rotation = object->rotation
-					};
-					Texture2D* texture = (Texture2D*)tile->image->resource_image;
-					Sprite sprite = {
-						.rect = {
-							.x = tile->ul_x,
-							.y = tile->ul_y,
-							.width = tile->width,
-							.height = tile->height },
-						.transform = transform,
-						.texture = texture
-					};
+				if (strcmp(layer->name, "Objects") == 0)
+					while (object) {
+						tmx_tile* tile = map->tiles[object->content.gid];
+						Transform2D transform = {
+							.position.x = object->x,
+							.position.y = object->y - tile->height,
+							.scale = { .x = 1.f, .y = 1.f },
+							.rotation = object->rotation
+						};
+						Texture2D* texture = (Texture2D*)tile->image->resource_image;
+						Sprite sprite = {
+							.rect = {
+								.x = tile->ul_x,
+								.y = tile->ul_y,
+								.width = tile->width,
+								.height = tile->height },
+							.transform = transform,
+							.texture = texture
+						};
 
-					add_to_group(&sprite, SPRITE_GROUP_ALL);
-					object = object->next;
+						sprite_push(&sprite, SPRITE_GROUP_ALL);
+						object = object->next;
+					}
+				else if (strcmp(layer->name, "Water") == 0) {
+					Texture2D** textures = malloc(sizeof(Texture2D*) * 4);
+					textures[0] = raylib_tex_loader("assets/graphics/tilesets/water/0.png");
+					textures[1] = raylib_tex_loader("assets/graphics/tilesets/water/1.png");
+					textures[2] = raylib_tex_loader("assets/graphics/tilesets/water/2.png");
+					textures[3] = raylib_tex_loader("assets/graphics/tilesets/water/3.png");
+					while (object) {
+						uint32_t columns = object->width / TILE_SIZE;
+						uint32_t rows = object->height / TILE_SIZE;
+						for (uint32_t y = 0; y < rows; y++) {
+							for (uint32_t x = 0; x < columns; x++) {
+								Transform2D transform = {
+									.position.x = object->x + (x * TILE_SIZE),
+									.position.y = object->y + (y * TILE_SIZE),
+									.scale = { .x = 1.f, .y = 1.f },
+									.rotation = object->rotation
+								};
+								AnimatedSprite sprite = {
+									.rect = {
+										.x = 0,
+										.y = 0,
+										.width = TILE_SIZE,
+										.height = TILE_SIZE },
+									.transform = transform,
+									.textures = textures,
+									.count = 4,
+									.frame_index = 0
+								};
+
+								sprite_push_animated(&sprite, SPRITE_GROUP_ALL);
+							}
+						}
+						object = object->next;
+					}
 				}
 			} break;
 			default: {
@@ -248,13 +306,23 @@ void draw_tilemap(const Tilemap* tilemap) {
 	}
 }
 
-void draw_sprites(const Sprite* sprites, uint32_t count) {
-	for (int entity = 0; entity < count; entity++) {
-		Sprite sprite = sprites[entity];
-		Transform2D transform = sprites[entity].transform;
+void draw_sprites(const SpriteGroup* group, uint32_t count) {
+	for (int entity = 0; entity < group->count; entity++) {
+		Sprite sprite = group->sprites[entity];
+		Transform2D transform = group->sprites[entity].transform;
 
 		if (sprite.texture)
 			DrawTextureRec(*sprite.texture, sprite.rect, transform.position, WHITE);
+		else
+			DrawRectangleV(transform.position, (Vector2){ sprite.rect.width, sprite.rect.height }, RED);
+	}
+
+	for (int entity = 0; entity < group->animated_count; entity++) {
+		AnimatedSprite sprite = group->animated_sprites[entity];
+		Transform2D transform = group->animated_sprites[entity].transform;
+
+		if (sprite.textures)
+			DrawTextureRec(*sprite.textures[((uint32_t)GetTime()) % sprite.count], sprite.rect, transform.position, WHITE);
 		else
 			DrawRectangleV(transform.position, (Vector2){ sprite.rect.width, sprite.rect.height }, RED);
 	}

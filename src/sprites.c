@@ -7,13 +7,13 @@
 
 static SpriteGroup g_groups[SPRITE_GROUP_COUNT];
 
-SpriteID add_to_group(Sprite* sprite, Group id) {
+SpriteID sprite_push(Sprite* sprite, Group id) {
 	if (id >= SPRITE_GROUP_COUNT) {
 		printf("ERROR: Sprite group ID out of bounds\n");
 		exit(1);
 	}
 	SpriteGroup* group = &g_groups[id];
-	if (group->capacity == group->count) {
+	if (group->count == group->capacity) {
 		group->capacity = group->capacity ? group->capacity * 2 : 32;
 		group->sprites = resize_array(group->sprites, group->count, group->capacity, sizeof(Sprite));
 	}
@@ -23,7 +23,23 @@ SpriteID add_to_group(Sprite* sprite, Group id) {
 	return group->count++;
 }
 
-SpriteGroup* get_group(Group id) {
+SpriteID sprite_push_animated(AnimatedSprite* sprite, Group id) {
+	if (id >= SPRITE_GROUP_COUNT) {
+		printf("ERROR: Sprite group ID out of bounds\n");
+		exit(1);
+	}
+	SpriteGroup* group = &g_groups[id];
+	if (group->animated_count == group->animated_capacity) {
+		group->animated_capacity = group->animated_capacity ? group->animated_capacity * 2 : 32;
+		group->animated_sprites = resize_array(group->animated_sprites, group->animated_count, group->animated_capacity, sizeof(AnimatedSprite));
+	}
+
+	memcpy(group->animated_sprites + group->animated_count, sprite, sizeof(AnimatedSprite));
+
+	return group->animated_count++;
+}
+
+SpriteGroup* sprite_fetch_group(Group id) {
 	if (id >= SPRITE_GROUP_COUNT) {
 		printf("ERROR: Sprite group ID out of bounds\n");
 		exit(1);
